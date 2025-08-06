@@ -4,6 +4,8 @@
 #include "BaseManager.h"
 #include "EventLoop.h"
 
+namespace dcdn{
+
 class HttpDownloader: public BaseManager, public EventLoop<HttpDownloader>
 {
 public:
@@ -12,5 +14,6 @@ private:
     void run();
 };
 
+} 
 
 #endif

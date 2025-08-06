@@ -1,5 +1,6 @@
 #include "HttpDownloader.h"
 
+namespace dcdn{
 
 HttpDownloader::HttpDownloader(MainManager* man):
     BaseManager(man)
@@ -9,3 +10,5 @@ HttpDownloader::HttpDownloader(MainManager* man):
 void HttpDownloader::run()
 {
 }
+
+} // namespace dcdn
