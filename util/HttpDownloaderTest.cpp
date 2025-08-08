@@ -1,40 +1,42 @@
+#include "HttpDownloader.h"
+
+#include <plog/Appenders/ConsoleAppender.h>
+#include <plog/Initializers/RollingFileInitializer.h>
+#include <plog/Log.h>
+
 #include <chrono>
 #include <condition_variable>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <plog/Log.h>
-#include <plog/Initializers/RollingFileInitializer.h>
-#include <plog/Appenders/ConsoleAppender.h>
-#include "HttpDownloader.h"
 
+using dcdn::util::DownloaderTask;
+using dcdn::util::HttpClientOption;
+using dcdn::util::HttpDownloader;
 using dcdn::util::HttpDownloaderTask;
 using dcdn::util::HttpDownloaderTaskOption;
-using dcdn::util::HttpDownloader;
-using dcdn::util::HttpClientOption;
 struct Task
 {
     std::string url;
-    std::shared_ptr<HttpDownloaderTask> task;
+    std::shared_ptr<DownloaderTask> task;
     std::string filename;
     std::shared_ptr<std::ofstream> file;
+    size_t lastReportSize = 0;
 };
 
 class Manager
 {
 public:
-    Manager()
-    {
-    }
+    Manager() {}
     HttpClientOption& Option()
     {
         return mDownloader;
     }
     void Run(const std::vector<std::string> urls)
     {
-        int ret = mDownloader.Init();
+        int ret = mDownloader.Init(nullptr);
         if (ret != 1) {
             logWarn << "Init fail" << std::endl;
             return;
@@ -56,7 +58,7 @@ public:
             if (!*task.file) {
                 logWarn << "fail to open file: " << path << " for url: " << url;
             }
-            auto t = mDownloader.AddTask(opt);
+            auto t = mDownloader.AddTask(&opt);
             if (t) {
                 task.task = t;
                 mTasks[t.get()] = task;
@@ -67,7 +69,7 @@ public:
         }
         std::vector<unsigned char> data;
         while (!mTasks.empty()) {
-            HttpDownloaderTask* t = nullptr;
+            DownloaderTask* t = nullptr;
             do {
                 std::unique_lock<std::mutex> lck(mMtx);
                 while (mTaskEvents.empty()) {
@@ -80,11 +82,13 @@ public:
             if (it == mTasks.end()) {
                 continue;
             }
-            logVerb << "handle task url:" << t->Option().Url;
             auto& task = it->second;
-            auto offset = task.task->Read(data);
-            if (!data.empty()) {
-                task.file->write((const char*)data.data(), data.size());
+            logVerb << "handle task url:" << task.url;
+            bool isEnd = t->IsEnd();
+            auto data = t->Read();
+            while (data) {
+                task.file->write((const char*)data->Data(), data->Length());
+                data = data->Next();
                 if (!*task.file) {
                     logWarn << "fail to write file: " << task.filename;
                     mDownloader.CancelTask(task.task);
@@ -92,46 +96,58 @@ public:
                     continue;
                 }
             }
-            if (task.task->IsEnd()) {
+            if (isEnd) {
                 auto st = task.task->Status();
-                if (st == HttpDownloaderTask::Completed) {
-                    logInfo << "success for url: " << task.url
-                        << " file: " << task.filename
-                        << " type: " << task.task->ContentType()
-                        << " length: " << task.task->ContentLength();
+                if (st == DownloaderTask::Completed) {
+                    std::string meta;
+                    if (auto ht = dynamic_cast<HttpDownloaderTask*>(task.task.get())) {
+                        meta += " type: " + ht->ContentType();
+                        meta += " length: " + std::to_string(ht->ContentLength());
+                    }
+                    logInfo << "success for url: " << task.url << " file: " << task.filename << meta;
                 } else {
-                    logWarn  << "fail for url: " << task.url << " file: " << task.filename;
+                    logWarn << "fail for url: " << task.url << " file: " << task.filename;
                 }
                 mTasks.erase(it);
             }
             auto now = std::chrono::steady_clock::now();
-            if (now - lastReportTime >= std::chrono::seconds(2)) {
+            auto duration = now - lastReportTime;
+            if (duration >= std::chrono::seconds(2)) {
                 for (auto& it : mTasks) {
                     auto t = it.first;
-                    logInfo << "task url:" << t->Option().Url
-                        << " progress:(" << t->Size() << "/" << t->ContentLength() << ")";
+                    size_t sz = t->Size() - it.second.lastReportSize;
+                    double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.;
+                    size_t len = 0;
+                    if (auto ht = dynamic_cast<HttpDownloaderTask*>(t)) {
+                        len = ht->ContentLength();
+                    }
+                    logInfo << "task url:" << it.second.url << " progress: " << t->Size() << "/" << len << " "
+                            << " speed: " << size_t(sz / elapsed) << " Bytes/s";
+                    it.second.lastReportSize = t->Size();
                 }
                 lastReportTime = now;
             }
         }
     }
+
 private:
-    static void notifyCallback(std::shared_ptr<HttpDownloaderTask> task, void* r)
+    static void notifyCallback(std::shared_ptr<DownloaderTask> task, void* r)
     {
         static_cast<Manager*>(r)->notify(task.get());
     }
-    void notify(HttpDownloaderTask* task)
+    void notify(DownloaderTask* task)
     {
         std::unique_lock<std::mutex> lck(mMtx);
         mTaskEvents.insert(task);
         mCv.notify_one();
     }
+
 private:
     std::mutex mMtx;
     std::condition_variable mCv;
     HttpDownloader mDownloader;
-    std::unordered_map<HttpDownloaderTask*, Task> mTasks;
-    std::unordered_set<HttpDownloaderTask*> mTaskEvents;
+    std::unordered_map<DownloaderTask*, Task> mTasks;
+    std::unordered_set<DownloaderTask*> mTaskEvents;
 };
 
 int main(int argc, char* argv[])
@@ -157,14 +173,15 @@ int main(int argc, char* argv[])
         }
     }
     if (urls.empty()) {
-        std::cout << "Usage: " << argv[0]
-            << " [-v]"
-            << " [--ua xxx]"
-            << " [--follow int]"
-            << " <url>..."
+        std::cout << "Usage: " << argv[0] << " [-v]"
+                  << " [--ua xxx]"
+                  << " [--follow int]"
+                  << " <url>..." << std::endl;
+        std::cout
+            << "eg:\n"
+            << argv[0] << " "
+            << "--follow 1 --ua 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36' https://curl.se/download/curl-8.15.0.tar.gz https://archives.boost.io/release/1.88.0/source/boost_1_88_0.tar.gz"
             << std::endl;
-        std::cout << "eg:\n" << argv[0] << " "
-            << "--follow 1 --ua 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36' https://curl.se/download/curl-8.15.0.tar.gz https://archives.boost.io/release/1.88.0/source/boost_1_88_0.tar.gz" << std::endl;
         return 1;
     }
     plog::init<DCDN_LOGGER_ID>(lvl, &consoleAppender);

@@ -1,10 +1,12 @@
 #ifndef _DCDN_UTIL_HTTP_CLIENT_H_
 #define _DCDN_UTIL_HTTP_CLIENT_H_
 
+#include <curl/curl.h>
+
 #include <string>
 #include <unordered_map>
+
 #include "common/Common.h"
-#include <curl/curl.h>
 
 NS_BEGIN(dcdn)
 NS_BEGIN(util)
@@ -17,10 +19,7 @@ public:
     class CurlHeaders
     {
     public:
-        CurlHeaders():
-            mHeaders(nullptr)
-        {
-        }
+        CurlHeaders(): mHeaders(nullptr) {}
         CurlHeaders(const std::unordered_multimap<std::string, std::string>& headers)
         {
             std::string header;
@@ -31,8 +30,7 @@ public:
                 mHeaders = curl_slist_append(mHeaders, header.c_str());
             }
         }
-        CurlHeaders(CurlHeaders&& oth):
-            mHeaders(oth.mHeaders)
+        CurlHeaders(CurlHeaders&& oth): mHeaders(oth.mHeaders)
         {
             oth.mHeaders = nullptr;
         }
@@ -62,13 +60,13 @@ public:
         {
             return mHeaders != nullptr;
         }
+
     private:
         curl_slist* mHeaders = nullptr;
     };
+
 public:
-    HttpHeaders()
-    {
-    }
+    HttpHeaders() {}
     ~HttpHeaders()
     {
         Clear();
@@ -84,9 +82,9 @@ public:
     bool Has(const char* key) const
     {
         auto it = mHeaders.find(key);
-        return it !=  mHeaders.end();
+        return it != mHeaders.end();
     }
-    void Set(const char* key, const char* val, bool unique=true)
+    void Set(const char* key, const char* val, bool unique = true)
     {
         if (unique) {
             mHeaders.erase(key);
@@ -104,6 +102,7 @@ public:
     {
         return CurlHeaders(mHeaders);
     }
+
 private:
     std::unordered_multimap<std::string, std::string> mHeaders;
 };
@@ -116,32 +115,23 @@ public:
         Get = 1,
         Post,
     };
+
 public:
-    HttpRequest():
-        mMethod(Get)
-    {
-    }
-    HttpRequest(const std::string& url):
-        mMethod(Get),
-        mUrl(url)
-    {
-    }
-    HttpRequest(const std::string& url, const std::string& body, const char* contentType=nullptr):
-        mMethod(Post),
-        mUrl(url)
+    HttpRequest(): mMethod(Get) {}
+    HttpRequest(const std::string& url): mMethod(Get), mUrl(url) {}
+    HttpRequest(const std::string& url, const std::string& body, const char* contentType = nullptr)
+        : mMethod(Post), mUrl(url)
     {
         SetBody(body, contentType);
     }
-    HttpRequest(HttpRequest&& oth):
-        mMethod(oth.mMethod),
-        mUrl(std::move(oth.mUrl)),
-        mHeaders(std::move(oth.mHeaders)),
-        mBody(std::move(oth.mBody))
+    HttpRequest(HttpRequest&& oth)
+        : mMethod(oth.mMethod),
+          mUrl(std::move(oth.mUrl)),
+          mHeaders(std::move(oth.mHeaders)),
+          mBody(std::move(oth.mBody))
     {
     }
-    ~HttpRequest()
-    {
-    }
+    ~HttpRequest() {}
     HttpRequest& operator=(HttpRequest&& oth)
     {
         mMethod = oth.mMethod;
@@ -190,7 +180,7 @@ public:
     {
         mHeaders.Set("Content-Type", val);
     }
-    void SetBody(const std::string& body, const char* contentType=nullptr)
+    void SetBody(const std::string& body, const char* contentType = nullptr)
     {
         mBody = body;
         if (contentType) {
@@ -206,6 +196,7 @@ public:
     {
         return mBody;
     }
+
 private:
     MethodType mMethod;
     std::string mUrl;
@@ -216,13 +207,9 @@ private:
 class HttpResponse
 {
 public:
-    HttpResponse()
-    {
-    }
-    HttpResponse(HttpResponse&& oth):
-        mStatus(oth.mStatus),
-        mHeaders(std::move(oth.mHeaders)),
-        mBody(std::move(oth.mBody))
+    HttpResponse() {}
+    HttpResponse(HttpResponse&& oth)
+        : mStatus(oth.mStatus), mHeaders(std::move(oth.mHeaders)), mBody(std::move(oth.mBody))
     {
     }
     HttpResponse& operator=(HttpResponse&& oth)
@@ -256,6 +243,7 @@ public:
     {
         return mBody;
     }
+
 private:
     long mStatus;
     HttpHeaders mHeaders;
@@ -265,9 +253,7 @@ private:
 class HttpClientOption
 {
 public:
-    HttpClientOption()
-    {
-    }
+    HttpClientOption() {}
     HttpClientOption(HttpClientOption&& oth)
     {
         operator=(std::move(oth));
@@ -327,6 +313,7 @@ public:
     {
         return mVerifySsl;
     }
+
 protected:
     void fill(CURL* c)
     {
@@ -345,20 +332,19 @@ protected:
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, mVerifySsl ? 1L : 0L);
         curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, mVerifySsl ? 2L : 0L);
     }
+
 protected:
     std::string mUserAgent;
     long mFollowLocation = 0;
-    long mConnectTimeout = 0; //milli seconds
-    long mRequestTimeout = 0; //milli seconds
+    long mConnectTimeout = 0; // milli seconds
+    long mRequestTimeout = 0; // milli seconds
     bool mVerifySsl = true;
 };
 
 class HttpClient: public HttpClientOption
 {
 public:
-    HttpClient()
-    {
-    }
+    HttpClient() {}
     HttpClient(HttpClient&& oth)
     {
         operator=(std::move(oth));
@@ -424,7 +410,7 @@ public:
         response.swap(res.Body());
         return code;
     }
-    long Post(const char* url, const std::string& body, std::string& response, const char* contentType=nullptr)
+    long Post(const char* url, const std::string& body, std::string& response, const char* contentType = nullptr)
     {
         HttpRequest req(url, body, contentType);
         HttpResponse res;
@@ -432,6 +418,7 @@ public:
         response.swap(res.Body());
         return code;
     }
+
 private:
     CURL* getCurl()
     {
@@ -467,16 +454,17 @@ private:
                     ++i;
                 }
                 if (i < n) {
-                    while (i < n && (p[n-1] == '\r' || p[n-1] == '\n')) {
+                    while (i < n && (p[n - 1] == '\r' || p[n - 1] == '\n')) {
                         --n;
                     }
-                    val.assign(p+i, n-i);
+                    val.assign(p + i, n - i);
                 }
             }
             headers->Set(key, val.c_str(), false);
         }
-        return size*nmemb;
+        return size * nmemb;
     }
+
 private:
     CURL* mCurl = nullptr;
 };

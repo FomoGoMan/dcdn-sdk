@@ -78,6 +78,7 @@ int main(int argc, char *argv[]) {
     sig.mtx.lock();
     sig.cv.wait(sig.mtx, [&] { return task->HasData(); });
     auto data = task->Read();
+    file.seekg(data->Offset());
     file.write((char *)data->Data(), data->Length());
   }
 
