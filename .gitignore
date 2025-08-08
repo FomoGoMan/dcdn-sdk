@@ -15,7 +15,7 @@ compile_commands.json  # 通常由 CMake 生成，建议软链接而非提交
 Makefile
 .cache/
 compile_commands.json
-
+.vscode
 # ==================== #
 # IDE/编辑器临时文件 #
 # ==================== #

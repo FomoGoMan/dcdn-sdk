@@ -4,17 +4,18 @@
 #include "BaseManager.h"
 #include "EventLoop.h"
 
-NS_BEGIN(dcdn)
+namespace dcdn {
 
-class DownloadManager: public BaseManager, public EventLoop<DownloadManager>
-{
+class DownloadManager : public BaseManager, public EventLoop<DownloadManager> {
+
 public:
-    DownloadManager(MainManager* man);
+  explicit DownloadManager(MainManager *man);
+
 private:
-    void run();
-    void handleDeployMsgEvent(std::shared_ptr<Event> evt);
+  void run();
+  void handleDeployMsgEvent(std::shared_ptr<Event> evt);
 };
 
-NS_END
+} // namespace dcdn
 
 #endif

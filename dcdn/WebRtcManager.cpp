@@ -78,7 +78,6 @@ void WebRtcManager::gather()
     } catch (...) {
         logWarn << "webrtc gather unknown excpetion";
     }
-
 }
 
 void WebRtcManager::gatherDone()

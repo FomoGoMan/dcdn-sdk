@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 project(dcdn VERSION 1.0)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(
+        -Wthread-safety
+        -Werror=thread-safety
+    )
+endif()
 
 # setup C++ standard
 set(CMAKE_CXX_STANDARD 17)
