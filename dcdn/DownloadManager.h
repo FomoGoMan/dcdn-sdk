@@ -31,6 +31,7 @@ enum class TaskStatus {
     Cancelled
 };
 
+// 表示使用方提交的一个总的下载任务
 struct DownloadTask {
     std::string id;
     std::string url;
@@ -85,6 +86,10 @@ struct FileDownloadOptions {
     FileDownloadOptions() : chunkSize(1024 * 1024) {} // 默认1MB
 };
 
+// DownloadManager 职责: 任务编排器 + 状态管理器 + 断点续传控制器
+// 兼容三种策略（HTTP_ONLY / P2P_ONLY / HYBRID），
+// 支持媒体流式读取、带宽比例控制、
+// 任务持久化以及进度合并
 class DownloadManager {
 public:
     explicit DownloadManager();
@@ -95,7 +100,7 @@ public:
     void setMaxConcurrentDownloads(size_t max);
     void setPersistPath(const std::string& path);
 
-    // 任务管理
+    // 任务管理,返回任务 ID
     std::string addDownloadTask(
         const std::string& url, 
         const std::string& contentHash = "",
@@ -159,7 +164,7 @@ private:
     void startP2pDownload(const std::string& taskId);
     void startHybridDownload(const std::string& taskId);
 
-    void splitTask(const std::string& taskId);
+    void splitTask(const std::string& taskId, size_t totalSize);
     void onSubTaskCompleted(const std::string& taskId, size_t subtaskIndex);
 
     // 成员变量
@@ -179,6 +184,17 @@ private:
 
     float httpBandwidthRatio_ = 0.5f;
     float p2pBandwidthRatio_ = 0.5f;
+
+    struct Range {
+        size_t start;
+        size_t end; // inclusive
+    };
+    // 等待下载的 Range 队列
+    std::unordered_map<std::string, std::vector<Range>> pendingRanges_;
+    // 记录每个子任务对应的文件路径，便于写入
+    std::unordered_map<std::string, std::string> subTaskFilePath_;
+    // 子任务 -> 父任务映射
+    std::unordered_map<std::string, std::string> subTaskParent_;
 };
 
 } // namespace dcdn
