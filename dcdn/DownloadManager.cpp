@@ -548,31 +548,75 @@ std::string DownloadManager::addDownloadTask(
 bool DownloadManager::cancelDownloadTask(const std::string& taskId) {
     CoreContext* core = getCore(this);
     if (!core) return false;
-    return runSyncOnCore<bool>(core, [this, core, taskId]() -> bool {
-        auto it = tasks_.find(taskId);
-        if (it == tasks_.end()) return false;
-        it->second.cancelled = true;
-        it->second.status = TaskStatus::Cancelled;
 
-        auto itVec = core->downloaderByTaskId.find(taskId);
-        if (itVec != core->downloaderByTaskId.end()) {
-            for (auto &sp : itVec->second) {
-                if (!sp) continue;
-                // 1) 先让底层取消
-                httpDownloader_->CancelTask(sp);
-                std::lock_guard<std::mutex> l(core->mtx);
-                // 2) 把可能残留的事件移除
-                core->events.erase(sp.get());
-                // 3) 把占位/记录移除
-                core->tasksByPtr.erase(sp.get());
-            }
-            itVec->second.clear();
+    return runSyncOnCore<bool>(core, [this, core, taskId]() -> bool {
+        // 1) 标记任务状态（受 tasksMutex_ 保护）
+        {
+            std::lock_guard<std::mutex> lk(tasksMutex_);
+            auto it = tasks_.find(taskId);
+            if (it == tasks_.end()) return false;
+            it->second.cancelled = true;
+            it->second.status = TaskStatus::Cancelled;
         }
-        // 清空 pending
-        core->pendingRanges[taskId].clear();
+
+        // 2) 取消底层子任务 + 清理 core 状态（受 core->mtx 保护）
+        {
+            std::lock_guard<std::mutex> l(core->mtx);
+
+            auto itVec = core->downloaderByTaskId.find(taskId);
+            if (itVec != core->downloaderByTaskId.end()) {
+                for (auto &sp : itVec->second) {
+                    if (!sp) continue;
+                    // 先取消
+                    httpDownloader_->CancelTask(sp);
+                    // 移除对应的事件与占位
+                    core->events.erase(sp.get());
+                    core->tasksByPtr.erase(sp.get());
+                }
+                itVec->second.clear();
+            }
+
+            // 3) 清空 pending ranges
+            core->pendingRanges[taskId].clear();
+
+            // 4) 关闭/移除父任务共享文件（optional)
+            // 关闭父任务共享文件句柄（先取出再关闭，确保没有持有者）
+            std::shared_ptr<std::fstream> f;
+            {
+                auto itF = core->parentFiles.find(taskId);
+                if (itF != core->parentFiles.end()) {
+                    f = itF->second; // 拿一份副本
+                    core->parentFiles.erase(itF);
+                }
+            }
+            if (f && f->is_open()) {
+                try { f->flush(); } catch (...) {}
+                try { f->close(); } catch (...) {}
+                f.reset();
+            }
+
+
+            FileDownloadOptions opts;
+            {
+                std::lock_guard<std::mutex> lk(tasksMutex_);
+                auto itOpt = taskOptions_.find(taskId);
+                if (itOpt != taskOptions_.end()) opts = itOpt->second;
+            }
+            if (!opts.outputPath.empty() && !opts.keepPartialOnCancel) {
+                std::error_code ec;
+                std::filesystem::remove(opts.outputPath, ec);
+                if (ec) {
+                    std::cerr << "remove(" << opts.outputPath << ") failed: " << ec.message() << std::endl;
+                }else{
+                    std::cout << "remove(" << opts.outputPath << ") succeed" << std::endl;
+                }
+            }
+        }
+
         return true;
     });
 }
+
 
 bool DownloadManager::pauseDownloadTask(const std::string& taskId) {
     CoreContext* core = getCore(this);

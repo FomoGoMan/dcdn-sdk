@@ -82,8 +82,9 @@ struct FileDownloadOptions {
     std::shared_ptr<std::ostream> outputStream;
     StreamCallback streamCallback;
     size_t chunkSize;
+    bool keepPartialOnCancel = false;  // 取消后是否保留半成品文件
 
-    FileDownloadOptions() : chunkSize(1024 * 1024) {} // 默认1MB
+    FileDownloadOptions() : chunkSize(100*1024 * 1024) {} 
 };
 
 // DownloadManager 职责: 任务编排器 + 状态管理器 + 断点续传控制器
