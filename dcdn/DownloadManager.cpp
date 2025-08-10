@@ -230,13 +230,33 @@ DownloadManager::DownloadManager() {
                 // 从 core->tasksByPtr 取到 active 之后
                 if (active.parentTaskId.empty()) {
                     std::cout << "warning: active.parentTaskId is empty" << std::endl;
-                    // 还没被 addDownloadTask 填充完整，回退到队列中等下一轮
+                    bool belongsToAnyParent = false;
                     {
                         std::lock_guard<std::mutex> l(core->mtx);
+                        // 判断这个 evPtr 是否仍然在任何父任务的 downloader 列表里
+                        for (auto &kv : core->downloaderByTaskId) {
+                            auto &vec = kv.second;
+                            if (std::any_of(vec.begin(), vec.end(),
+                                            [evPtr](const std::shared_ptr<dcdn::util::DownloaderTask>& p){
+                                                return p && p.get() == evPtr;
+                                            })) {
+                                belongsToAnyParent = true;
+                                break;
+                            }
+                        }
+                        if (!belongsToAnyParent) {
+                            // 孤儿通知：可能是 cancel 后的迟到回调，直接删除占位并丢弃
+                            core->tasksByPtr.erase(evPtr);
+                        }
+                    }
+
+                    if (belongsToAnyParent) {
+                        // 仍处于“正在注册”的 race，允许下一轮再处理
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        std::lock_guard<std::mutex> l2(core->mtx);
                         core->events.insert(evPtr);
                     }
-                    // 稍微让出一下，避免空转
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    // 不再打印 warning，也不自旋
                     continue;
                 }
                 auto sp = active.downloader;
@@ -537,7 +557,13 @@ bool DownloadManager::cancelDownloadTask(const std::string& taskId) {
         auto itVec = core->downloaderByTaskId.find(taskId);
         if (itVec != core->downloaderByTaskId.end()) {
             for (auto &sp : itVec->second) {
-                if (sp) httpDownloader_->CancelTask(sp);
+                if (!sp) continue;
+                // 1) 先让底层取消
+                httpDownloader_->CancelTask(sp);
+                std::lock_guard<std::mutex> l(core->mtx);
+                // 2) 把可能残留的事件移除
+                core->events.erase(sp.get());
+                // 3) 把占位/记录移除
                 core->tasksByPtr.erase(sp.get());
             }
             itVec->second.clear();
