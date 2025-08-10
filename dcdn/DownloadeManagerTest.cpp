@@ -45,11 +45,11 @@ int main() {
             break;
         }
 
-        if (percent > 0.1){
-           auto res = mgr.cancelDownloadTask(taskId);
-           if (res) std::cout << "main: 取消任务成功" << std::endl;
-           else std::cout << "main: 取消任务失败" << std::endl;
-        }
+        // if (percent > 0.1){
+        //    auto res = mgr.cancelDownloadTask(taskId);
+        //    if (res) std::cout << "main: 取消任务成功" << std::endl;
+        //    else std::cout << "main: 取消任务失败" << std::endl;
+        // }
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
