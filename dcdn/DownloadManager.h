@@ -2,6 +2,7 @@
 #define _DCDN_SDK_DOWNLOAD_MANAGER_H_
 
 #include "p2p_downloader.h"
+#include "util/Downloader.h"
 #include "util/HttpDownloader.h"
 #include <sqlite3.h>
 #include <functional>
@@ -47,6 +48,7 @@ struct DownloadTask {
 
     // 已下载区间，用于断点续传
     std::vector<std::pair<size_t, size_t>> completedRanges;
+
     // copy assignment 
     DownloadTask& operator=(const DownloadTask& other) {
         id = other.id;
@@ -64,10 +66,8 @@ struct DownloadTask {
         return *this;
     }
     // copy constructor
-    DownloadTask(const DownloadTask& other) {
-        *this = other;
-    }
-    DownloadTask(){}
+    DownloadTask(const DownloadTask& other) { *this = other; }
+    DownloadTask() {}
 
     std::string serialize() const;
     static DownloadTask deserialize(const std::string& data);
@@ -125,7 +125,7 @@ public:
     void setP2pBandwidthRatio(float ratio);  // 0.0-1.0
 
 private:
-    // 内部任务分片
+    // 内部任务分片（持久化/统计用）
     struct SubTask {
         size_t offset;
         size_t length;
@@ -156,7 +156,8 @@ private:
     void persistTask(const DownloadTask& task);
     void removePersistedTask(const std::string& taskId);
     void updateTaskProgress(const std::string& taskId, size_t downloaded);
-    void calculateSpeed(const std::string& taskId);
+    void calculateSpeedLocked(DownloadTask& t,
+                                 std::chrono::system_clock::time_point now);
     void checkTaskCompletion(const std::string& taskId);
     void notifyBufferReady(const std::string& taskId, size_t start, size_t end);
 
@@ -164,6 +165,7 @@ private:
     void startP2pDownload(const std::string& taskId);
     void startHybridDownload(const std::string& taskId);
 
+    // 重要：在探测到 Content-Length 后切片
     void splitTask(const std::string& taskId, size_t totalSize);
     void onSubTaskCompleted(const std::string& taskId, size_t subtaskIndex);
 
@@ -184,17 +186,6 @@ private:
 
     float httpBandwidthRatio_ = 0.5f;
     float p2pBandwidthRatio_ = 0.5f;
-
-    struct Range {
-        size_t start;
-        size_t end; // inclusive
-    };
-    // 等待下载的 Range 队列
-    std::unordered_map<std::string, std::vector<Range>> pendingRanges_;
-    // 记录每个子任务对应的文件路径，便于写入
-    std::unordered_map<std::string, std::string> subTaskFilePath_;
-    // 子任务 -> 父任务映射
-    std::unordered_map<std::string, std::string> subTaskParent_;
 };
 
 } // namespace dcdn

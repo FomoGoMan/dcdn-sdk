@@ -19,6 +19,8 @@ add_library(dcdn  STATIC
     p2p_downloader.cpp
     p2p_single_task.cpp
     p2p_test_peer_uploader.cpp
+    DownloadManager.cpp
+    
 )
 
 include_directories(
@@ -45,9 +47,11 @@ target_link_libraries(dcdn PRIVATE
 add_executable(MainTest MainManagerTest.cpp)
 add_executable(p2p_downloader_test p2p_downloader_test.cpp)
 add_executable(fake_uploader p2p_test_peer_uploader.cpp)
+add_executable(dl_manager_test DownloadeManagerTest.cpp)
 target_link_libraries(MainTest PRIVATE dcdn)
 target_link_libraries(p2p_downloader_test PRIVATE dcdn)
 target_link_libraries(fake_uploader PRIVATE dcdn)
+target_link_libraries(dl_manager_test PRIVATE dcdn)
 
 
 

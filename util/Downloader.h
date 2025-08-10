@@ -16,7 +16,7 @@ struct DownloaderTaskOption
 {
     size_t Start = 0;
     size_t End = 0;
-    size_t MaxBuf = 0;
+    size_t MaxBuf = 10 * 1024 * 1024; //  default: 10MB
 
     void (*Notify)(std::shared_ptr<DownloaderTask> task, void* recevier) = nullptr;
     void* Receiver = nullptr;

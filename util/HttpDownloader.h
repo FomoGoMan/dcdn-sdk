@@ -296,7 +296,10 @@ private:
     }
     void handleCancelTaskEvent(std::shared_ptr<Event> evt)
     {
-        auto t = std::any_cast<std::shared_ptr<HttpDownloaderTask>>(evt->second);
+        // any 里装的是 std::shared_ptr<DownloaderTask>
+    auto base = std::any_cast<std::shared_ptr<DownloaderTask>>(evt->second);
+    auto t = std::dynamic_pointer_cast<HttpDownloaderTask>(base);
+    if (!t) return;
         auto it = mTasks.find(t.get());
         if (it != mTasks.end()) {
             if (t->cancel()) {
